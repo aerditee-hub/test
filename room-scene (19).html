@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Room</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1410; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #hint { position: absolute; top: 12px; left: 12px; color: #f0dcc0; font-family: sans-serif; font-size: 12px; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 4px; }
+  #crosshair {
+    position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+    margin: -3px 0 0 -3px; border-radius: 50%;
+    background: rgba(255,240,220,0.85); pointer-events: none;
+  }
+  #triggerPrompt {
+    position:absolute; left:50%; bottom:14%; transform:translateX(-50%);
+    font-family:'Comic Sans MS','Comic Sans',cursive; font-size:20px; color:#fff;
+    background:rgba(20,14,9,0.7); padding:10px 18px; border-radius:10px;
+    border: 2px solid #ffcf8f; display:none; z-index:12; text-align:center; max-width:70vw;
+  }
+  #triggerOverlay {
+    position:absolute; inset:0; display:none;
+    background:#1a1410; z-index:30;
+  }
+  #triggerOverlayClose {
+    position:absolute; top:14px; right:14px; z-index:31;
+    background:#3a2818; color:#f0dcc0; border:1px solid #6b4a2a; border-radius:5px;
+    padding:6px 14px; font-size:13px; cursor:pointer; font-family:sans-serif;
+  }
+  #triggerOverlayFrame { position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff; }
+
+  /* ===================== JARVIS HUD ===================== */
+  #jarvisPanel {
+    position: absolute;
+    top: 50%;
+    left: -340px;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 70vh;
+    background: linear-gradient(160deg, rgba(6,18,28,0.88), rgba(4,10,18,0.92));
+    border: 1px solid rgba(80,200,255,0.5);
+    border-radius: 10px;
+    box-shadow: 0 0 24px rgba(40,180,255,0.25), inset 0 0 30px rgba(0,140,255,0.06);
+    padding: 14px 16px 16px;
+    z-index: 50;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: #bfefff;
+    transition: left 0.5s cubic-bezier(.2,.8,.2,1), box-shadow 0.4s ease;
+    overflow: hidden;
+  }
+  #jarvisPanel.active {
+    left: 16px;
+    box-shadow: 0 0 34px rgba(60,200,255,0.45), inset 0 0 30px rgba(0,160,255,0.1);
+  }
+  #jarvisHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(80,200,255,0.3);
+  }
+  #jarvisDot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #2a5a70;
+    box-shadow: 0 0 6px rgba(60,200,255,0.4);
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+  }
+  #jarvisPanel.listening #jarvisDot {
+    background: #ff5555;
+    box-shadow: 0 0 10px rgba(255,80,80,0.8);
+    animation: jarvisPulse 1s infinite;
+  }
+  #jarvisPanel.active #jarvisDot {
+    background: #4de3ff;
+    box-shadow: 0 0 10px rgba(80,220,255,0.8);
+  }
+  @keyframes jarvisPulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  #jarvisTitle {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    color: #7fe0ff;
+    text-shadow: 0 0 8px rgba(80,200,255,0.5);
+  }
+  #jarvisStatus {
+    font-size: 11px;
+    color: #6fa8c0;
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+    min-height: 14px;
+  }
+  #jarvisQuestion {
+    font-size: 12px;
+    color: #8fd8ff;
+    opacity: 0.85;
+    margin-bottom: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    min-height: 0;
+  }
+  #jarvisAnswer {
+    font-size: 13px;
+    color: #e4f9ff;
+    line-height: 1.5;
+    max-height: 45vh;
+    overflow-y: auto;
+    text-shadow: 0 0 6px rgba(80,200,255,0.15);
+  }
+  #jarvisAnswer::-webkit-scrollbar { width: 4px; }
+  #jarvisAnswer::-webkit-scrollbar-thumb { background: rgba(80,200,255,0.4); border-radius: 2px; }
+  /* =================== /JARVIS HUD ===================== */
+</style>
+</head>
+<body>
+
+<!-- ===================== JARVIS HUD ===================== -->
+<div id="jarvisPanel">
+  <div id="jarvisHeader">
+    <span id="jarvisDot"></span>
+    <span id="jarvisTitle">J.A.R.V.I.S.</span>
+  </div>
+  <div id="jarvisStatus">Say &ldquo;Hey Jarvis&rdquo; to activate</div>
+  <div id="jarvisQuestion"></div>
+  <div id="jarvisAnswer"></div>
+</div>
+<!-- =================== /JARVIS HUD ===================== -->
+
+<div id="hint">Click to look around &middot; WASD to move &middot; Esc to release mouse</div>
+<div id="crosshair"></div>
+
+<div id="triggerPrompt"></div>
+
+<div id="triggerOverlay">
+  <button id="triggerOverlayClose">Exit (Esc)</button>
+  <iframe id="triggerOverlayFrame"></iframe>
+</div>
+
+<div id="videoPool" style="display:none"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.164.1/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ===========================================================
+   This file is a self-contained, walk-only viewer. It has no
+   editor UI — it simply rebuilds the room and then loads the
+   scene data embedded near the closing tag as static,
+   already-placed objects and trigger zones.
+=========================================================== */
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdedede);
+scene.fog = new THREE.Fog(0xdedede, 8, 18);
+
+const camera = new THREE.PerspectiveCamera(64, innerWidth/innerHeight, 0.05, 60);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// A softly-lit studio environment (no visible geometry) so imported PBR
+// materials pick up realistic ambient reflections instead of looking
+// flat and matte under direct light alone — this is what gives glossy
+// or metal surfaces believable highlights.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// Studio-style 3-point lighting: a strong key light with soft shadows,
+// a gentle fill from the opposite side so shadows do not go pitch
+// black, and a rim light from behind to separate objects from the
+// walls. A soft hemisphere light replaces flat ambient so surfaces
+// still read a subtle top/bottom gradient instead of looking
+// uniformly lit.
+const key = new THREE.DirectionalLight(0xfff4e6, 2.4);
+key.position.set(-4, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 24;
+key.shadow.camera.left = -6;
+key.shadow.camera.right = 6;
+key.shadow.camera.top = 6;
+key.shadow.camera.bottom = -6;
+key.shadow.bias = -0.0015;
+key.shadow.radius = 4;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xdce8ff, 0.6);
+fill.position.set(5, 4, -3);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xffffff, 1.0);
+rim.position.set(0, 6, -6);
+scene.add(rim);
+
+const hemi = new THREE.HemisphereLight(0xf5f0e8, 0x33291c, 0.5);
+scene.add(hemi);
+
+const ROOM_HALF = 4.6;
+const WALL_HEIGHT = 3.6;
+const WALL_THICK = 0.25;
+const EDGE_COLOR = 0x111111;
+
+function addEdges(mesh, color = EDGE_COLOR) {
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+  mesh.add(line);
+  return line;
+}
+
+const PLATFORM_HEIGHT = 0.12;
+const platformMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2f, roughness: 0.75, metalness: 0.05 });
+const floor = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2, PLATFORM_HEIGHT, ROOM_HALF*2), platformMat);
+floor.position.set(0, PLATFORM_HEIGHT/2, 0);
+addEdges(floor);
+floor.receiveShadow = true;
+scene.add(floor);
+
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
+const wallGroup = new THREE.Group();
+
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK), wallMat);
+backWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, -ROOM_HALF - WALL_THICK/2);
+addEdges(backWall);
+wallGroup.add(backWall);
+
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK), wallMat);
+leftWall.position.set(-ROOM_HALF - WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(leftWall);
+wallGroup.add(leftWall);
+
+const rightWall = new THREE.Mesh(new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, ROOM_HALF*2 + WALL_THICK), wallMat);
+rightWall.position.set(ROOM_HALF + WALL_THICK/2, PLATFORM_HEIGHT + WALL_HEIGHT/2, 0);
+addEdges(rightWall);
+wallGroup.add(rightWall);
+
+const frontWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_HEIGHT, WALL_THICK), wallMat);
+frontWall.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT/2, ROOM_HALF + WALL_THICK/2);
+addEdges(frontWall);
+wallGroup.add(frontWall);
+
+wallGroup.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
+scene.add(wallGroup);
+
+const ceilingMat = new THREE.MeshStandardMaterial({ color: 0xb02020, roughness: 0.85, metalness: 0.0 });
+const ceiling = new THREE.Mesh(new THREE.BoxGeometry(ROOM_HALF*2 + WALL_THICK, WALL_THICK, ROOM_HALF*2 + WALL_THICK), ceilingMat);
+ceiling.position.set(0, PLATFORM_HEIGHT + WALL_HEIGHT + WALL_THICK/2, 0);
+addEdges(ceiling);
+ceiling.receiveShadow = true;
+scene.add(ceiling);
+
+/* ---------------------------------------------------------
+   FIRST-PERSON PLAYER
+--------------------------------------------------------- */
+const EYE_HEIGHT = 1.55;
+let yaw = 0;
+let pitch = 0;
+const playerPos = new THREE.Vector3(0, EYE_HEIGHT, ROOM_HALF - 1.3);
+camera.position.copy(playerPos);
+
+renderer.domElement.addEventListener('click', () => {
+  unlockVideoAudio();
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  yaw -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = Math.max(-1.3, Math.min(1.3, pitch));
+});
+
+const keys = {};
+addEventListener('keydown', e => {
+  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'e') tryOpenActiveTrigger();
+  if (e.key === 'Escape') closeTriggerOverlay();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const MARGIN = 0.35;
+const PLAYER_R = 0.28;
+function clampToRoom(v) {
+  return Math.max(-ROOM_HALF + MARGIN, Math.min(ROOM_HALF - MARGIN, v));
+}
+
+const importedObjects = []; // populated from embedded scene data below
+const videoPoolEl = document.getElementById('videoPool');
+let videoAudioUnlocked = false;
+function unlockVideoAudio() {
+  if (videoAudioUnlocked) return;
+  videoAudioUnlocked = true;
+  importedObjects.forEach(entry => {
+    if (entry.kind !== 'video' || !entry.videoEl) return;
+    entry.videoEl.muted = false;
+    entry.videoEl.volume = entry.volume;
+    entry.videoEl.play().catch(() => {});
+  });
+}
+
+function hitsObstacle(x, z) {
+  for (const entry of importedObjects) {
+    if (!entry.solid) continue;
+    const box = new THREE.Box3().setFromObject(entry.root);
+    const halfW = (box.max.x - box.min.x) / 2 + PLAYER_R;
+    const halfD = (box.max.z - box.min.z) / 2 + PLAYER_R;
+    const cx = (box.max.x + box.min.x) / 2;
+    const cz = (box.max.z + box.min.z) / 2;
+    if (Math.abs(x - cx) < halfW && Math.abs(z - cz) < halfD) return true;
+  }
+  return false;
+}
+
+function updatePlayer(dt) {
+  const speed = 3.6 * dt;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const strafe = new THREE.Vector3(-forward.z, 0, forward.x);
+  const move = new THREE.Vector3();
+  if (keys['w']) move.add(forward);
+  if (keys['s']) move.sub(forward);
+  if (keys['d']) move.add(strafe);
+  if (keys['a']) move.sub(strafe);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    const nx = playerPos.x + move.x;
+    const nz = playerPos.z + move.z;
+    if (!hitsObstacle(nx, nz)) {
+      playerPos.x = nx; playerPos.z = nz;
+    } else if (!hitsObstacle(nx, playerPos.z)) {
+      playerPos.x = nx;
+    } else if (!hitsObstacle(playerPos.x, nz)) {
+      playerPos.z = nz;
+    }
+  }
+  playerPos.x = clampToRoom(playerPos.x);
+  playerPos.z = clampToRoom(playerPos.z);
+}
+
+function updateCamera() {
+  camera.position.copy(playerPos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+
+/* ---------------------------------------------------------
+   TRIGGER ZONES (runtime only — no editor visuals here)
+--------------------------------------------------------- */
+const triggers = [];
+let activeTrigger = null;
+let overlayOpen = false;
+
+const triggerPromptEl = document.getElementById('triggerPrompt');
+const triggerOverlayEl = document.getElementById('triggerOverlay');
+const triggerOverlayFrame = document.getElementById('triggerOverlayFrame');
+
+function updateActiveTrigger() {
+  if (overlayOpen) return;
+  let found = null;
+  for (const t of triggers) {
+    const dx = playerPos.x - t.x, dz = playerPos.z - t.z;
+    if (dx*dx + dz*dz <= t.radius * t.radius) { found = t; break; }
+  }
+  if (found !== activeTrigger) {
+    activeTrigger = found;
+    if (activeTrigger) {
+      triggerPromptEl.textContent = activeTrigger.text || 'Press E to open';
+      triggerPromptEl.style.display = 'block';
+    } else {
+      triggerPromptEl.style.display = 'none';
+    }
+  }
+}
+
+function tryOpenActiveTrigger() {
+  if (!activeTrigger || overlayOpen) return;
+  overlayOpen = true;
+  const filename = 'html' + activeTrigger.fileIndex + '.html';
+  triggerOverlayFrame.src = filename;
+  triggerOverlayEl.style.display = 'block';
+  triggerPromptEl.style.display = 'none';
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
+function closeTriggerOverlay() {
+  if (!overlayOpen) return;
+  overlayOpen = false;
+  triggerOverlayEl.style.display = 'none';
+  triggerOverlayFrame.src = 'about:blank';
+}
+document.getElementById('triggerOverlayClose').addEventListener('click', closeTriggerOverlay);
+
+/* ---------------------------------------------------------
+   LOAD BAKED SCENE DATA
+--------------------------------------------------------- */
+const loader = new GLTFLoader();
+
+function arrayBufferFromBase64(b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return bytes.buffer;
+}
+
+function applyBrightness(entry) {
+  entry.materials.forEach(({ mat, baseColor, baseEmissive, hasEmissive }) => {
+    if (mat.color) {
+      mat.color.setRGB(
+        Math.min(baseColor.r * entry.brightness, 4),
+        Math.min(baseColor.g * entry.brightness, 4),
+        Math.min(baseColor.b * entry.brightness, 4)
+      );
+    }
+    if (hasEmissive) {
+      mat.emissive.setRGB(
+        Math.min(baseEmissive.r * entry.brightness, 4),
+        Math.min(baseEmissive.g * entry.brightness, 4),
+        Math.min(baseEmissive.b * entry.brightness, 4)
+      );
+    }
+    mat.toneMapped = false;
+    mat.needsUpdate = true;
+  });
+}
+
+function loadScene() {
+  const dataEl = document.getElementById('savedSceneData');
+  if (!dataEl) return;
+  let sceneData;
+  try {
+    sceneData = JSON.parse(dataEl.textContent);
+  } catch (e) {
+    console.error('Could not parse saved scene data:', e);
+    return;
+  }
+
+  const objectsData = sceneData.objects || [];
+  const triggersData = sceneData.triggers || [];
+
+  objectsData.forEach(item => {
+    const buffer = arrayBufferFromBase64(item.glbBase64);
+    loader.parse(buffer, '', gltf => {
+      const root = gltf.scene;
+      root.position.fromArray(item.position);
+      root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+      root.scale.setScalar(item.scale);
+
+      const materials = [];
+      root.traverse(child => {
+        if (child.isMesh && child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            materials.push({
+              mat,
+              baseColor: mat.color ? mat.color.clone() : new THREE.Color(1,1,1),
+              baseEmissive: mat.emissive ? mat.emissive.clone() : new THREE.Color(0,0,0),
+              hasEmissive: !!mat.emissive
+            });
+          });
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      const entry = {
+        kind: 'model',
+        root,
+        brightness: item.brightness,
+        solid: item.solid,
+        materials
+      };
+      scene.add(root);
+      importedObjects.push(entry);
+      applyBrightness(entry);
+    }, err => console.error('Failed to load an object from the saved scene:', err));
+  });
+
+  const videosData = sceneData.videos || [];
+  videosData.forEach(item => {
+    if (!item.src) return;
+    const videoEl = document.createElement('video');
+    videoEl.src = item.src; // place this file next to the saved HTML
+    videoEl.loop = item.loop;
+    videoEl.muted = true;   // autoplay requires muted until the player clicks (see unlockVideoAudio)
+    videoEl.playsInline = true;
+    videoEl.autoplay = true;
+    videoPoolEl.appendChild(videoEl);
+
+    const texture = new THREE.VideoTexture(videoEl);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const width = item.width || 1.2;
+    const height = item.height || 0.675;
+    const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+    const root = new THREE.Group();
+    root.add(mesh);
+    root.position.fromArray(item.position);
+    root.rotation.set(item.rotation[0], item.rotation[1], item.rotation[2]);
+    root.scale.setScalar(item.scale);
+
+    const entry = { kind: 'video', root, mesh, mat, texture, videoEl, solid: item.solid, loop: item.loop, volume: item.volume };
+    scene.add(root);
+    importedObjects.push(entry);
+    videoEl.play().catch(() => {});
+  });
+
+  triggersData.forEach(t => {
+    triggers.push({ x: t.x, z: t.z, radius: t.radius, text: t.text, fileIndex: t.fileIndex });
+    // trigger circles are never visible in the standalone viewer, only their effect is active
+  });
+}
+loadScene();
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updatePlayer(dt);
+  updateCamera();
+  updateActiveTrigger();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+
+<script>
+(function () {
+  const WAKE_PHRASES = ["hey jarvis", "hey, jarvis", "hey jarves", "a jarvis"];
+  const SLEEP_PHRASES = ["sleep jarvis", "jarvis sleep", "go to sleep jarvis", "goodbye jarvis"];
+
+  // ===================== BACKEND CONFIG =====================
+  // Point this at your proxy: http://localhost:3000/api/ask while testing
+  // locally with `vercel dev`, then your deployed URL once live, e.g.
+  // https://jarvis-backend-6i73vgc3v-aerdite.vercel.app/api/ask
+  const BACKEND_URL = "https://jarvis-backend-6i73vgc3v-aerdite.vercel.app/api/ask";
+
+  const jarvisKnowledgeBase = [
+    // { keywords: ["time"], answer: "I don't have a live clock wired up yet, sir." },
+  ];
+
+  function searchKnowledgeBase(question) {
+    const q = question.toLowerCase();
+    let best = null, bestScore = 0;
+    for (const entry of jarvisKnowledgeBase) {
+      const score = entry.keywords.filter(k => q.includes(k)).length;
+      if (score > bestScore) { bestScore = score; best = entry; }
+    }
+    return bestScore > 0 ? best.answer : null;
+  }
+
+  async function askBackend(question) {
+    try {
+      // text/plain avoids a CORS preflight (application/json does not
+      // qualify as a "simple" request, so the browser would otherwise
+      // send a separate OPTIONS request before every real POST here,
+      // doubling the number of requests that hit the backend).
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ question })
+      });
+
+      if (!res.ok) {
+        console.error('Backend responded with error status:', res.status);
+        return "I'm having trouble reaching my knowledge source right now, sir.";
+      }
+
+      const data = await res.json();
+      return data.answer || "I didn't get a usable answer back, sir.";
+    } catch (err) {
+      console.error('askBackend fetch failed:', err);
+      return "I can't reach the backend right now — is it running, sir?";
+    }
+  }
+
+  const panel = document.getElementById('jarvisPanel');
+  const statusEl = document.getElementById('jarvisStatus');
+  const questionEl = document.getElementById('jarvisQuestion');
+  const answerEl = document.getElementById('jarvisAnswer');
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function openPanel() { panel.classList.add('active'); }
+  function closePanelAfterDelay(ms) {
+    setTimeout(() => {
+      panel.classList.remove('active');
+      questionEl.textContent = '';
+      answerEl.textContent = '';
+      setStatus('Say "Hey Jarvis" to activate');
+    }, ms);
+  }
+
+  let speaking = false;
+  function speak(text, onEnd) {
+    if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+    speaking = true;
+    // Mute recognition's own onresult handling while we talk, but do NOT
+    // stop/abort/recreate the recognition object — on some browsers that
+    // is what re-triggers the permission prompt. We just ignore results
+    // that arrive while speaking (see recognition.onresult below).
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.02;
+    utter.pitch = 0.85;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => /male|daniel|david|google uk english male/i.test(v.name));
+    if (preferred) utter.voice = preferred;
+    utter.onend = () => {
+      speaking = false;
+      if (onEnd) onEnd();
+    };
+    window.speechSynthesis.speak(utter);
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    if (panel) setStatus('Voice recognition not supported in this browser (use Chrome).');
+    return;
+  }
+
+  let mode = 'idle';
+  // A single, long-lived recognition instance, built on top of a single
+  // long-lived getUserMedia stream that we deliberately never stop.
+  // Recreating the recognition object, OR releasing the mic stream
+  // between uses, is what causes Chrome/Edge to re-check (and sometimes
+  // re-prompt for) microphone permission.
+  let recognition = null;
+  let recognitionActive = false; // true while a .start() session is actually live
+  let permissionDenied = false;
+  let micStream = null; // kept open for the whole page session on purpose
+
+  let lastRecognitionEventAt = Date.now();
+
+  function setupRecognition() {
+    const r = new SpeechRecognition();
+    r.lang = 'en-US';
+    r.continuous = true;       // keep one session running instead of restarting per phrase
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => {
+      recognitionActive = true;
+      lastRecognitionEventAt = Date.now();
+    };
+
+    r.onresult = (e) => {
+      lastRecognitionEventAt = Date.now();
+      if (speaking) return; // ignore anything heard while JARVIS itself is talking
+      const last = e.results[e.results.length - 1];
+      const heard = last[0].transcript.trim();
+      handleHeardText(heard);
+    };
+
+    r.onspeechstart = () => { lastRecognitionEventAt = Date.now(); };
+    r.onsoundstart = () => { lastRecognitionEventAt = Date.now(); };
+
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        // Real permission denial — nothing we do will recover this
+        // without the user re-granting access and reloading.
+        permissionDenied = true;
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        // 'service-not-allowed', 'network', etc. can be transient (e.g.
+        // after many restart cycles) and are NOT a real permission
+        // revocation — just log it and let onend's restart (and the
+        // watchdog below) bring the session back.
+        console.warn('JARVIS speech recognition error:', e.error);
+      }
+    };
+
+    // continuous mode can still end on its own (e.g. long silence, tab
+    // backgrounded). Restart the SAME instance's session rather than
+    // building a new object, to avoid re-triggering permission checks.
+    // A short delay avoids a tight start/end loop, which is what tends
+    // to make the browser re-surface the permission prompt.
+    r.onend = () => {
+      recognitionActive = false;
+      if (permissionDenied) return;
+      setTimeout(() => {
+        if (!recognitionActive && !permissionDenied) {
+          try { r.start(); } catch (err) { /* already running; ignore */ }
+        }
+      }, 250);
+    };
+
+    return r;
+  }
+
+  function startListening() {
+    if (permissionDenied) return;
+    if (!recognition) recognition = setupRecognition();
+    if (recognitionActive) return;
+    try {
+      recognition.start();
+    } catch (err) {
+      // already running — fine, we only need one active session
+    }
+  }
+
+  // Guards against the same spoken phrase being handled twice. In
+  // continuous mode, SpeechRecognition can occasionally fire onresult
+  // more than once for what is really a single utterance (e.g. an
+  // interim result that gets finalized, then a duplicate final result
+  // right after) — without this lock that could send the same question
+  // to the backend twice.
+  let processingQuestion = false;
+
+  function handleHeardText(text) {
+    const lower = text.toLowerCase();
+
+    if (mode === 'idle') {
+      const heardWake = WAKE_PHRASES.some(p => lower.includes(p));
+      if (heardWake) activateJarvis();
+      return;
+    }
+
+    if (mode === 'active') {
+      if (processingQuestion) return; // already handling the previous utterance
+
+      const heardSleep = SLEEP_PHRASES.some(p => lower.includes(p));
+      if (heardSleep) {
+        deactivateJarvis();
+        return;
+      }
+      panel.classList.remove('listening');
+      askQuestion(text);
+    }
+  }
+
+  const MAX_QUESTIONS_PER_SESSION = 4;
+  let questionCount = 0;
+
+  function activateJarvis() {
+    mode = 'active';
+    questionCount = 0;
+    openPanel();
+    setStatus('Yes, sir.');
+    questionEl.textContent = '';
+    answerEl.textContent = '';
+    speak('Yes sir', () => {
+      setStatus('Listening...');
+      panel.classList.add('listening');
+    });
+  }
+
+  function deactivateJarvis() {
+    mode = 'idle';
+    panel.classList.remove('listening');
+    setStatus('Going to sleep, sir.');
+    speak('Going to sleep', () => {
+      closePanelAfterDelay(800);
+    });
+  }
+
+  async function askQuestion(question) {
+    processingQuestion = true;
+    questionEl.textContent = '"' + question + '"';
+    setStatus('Processing...');
+
+    const local = searchKnowledgeBase(question);
+    let answer;
+    if (local) {
+      answer = local;
+    } else {
+      answer = await askBackend(question);
+    }
+
+    questionCount++;
+    answerEl.textContent = answer;
+    setStatus('Responding...');
+
+    const reachedLimit = questionCount >= MAX_QUESTIONS_PER_SESSION;
+
+    speak(answer, () => {
+      processingQuestion = false;
+      if (reachedLimit) {
+        // Auto-sleep after the configured number of questions in one
+        // wake session — say "hey jarvis" again to start a fresh batch.
+        deactivateJarvis();
+        return;
+      }
+      if (mode === 'active') {
+        setStatus('Listening...');
+        panel.classList.add('listening');
+      }
+    });
+  }
+
+  // Request mic access exactly once up front, and deliberately KEEP the
+  // stream open for the life of the page. This produces a single
+  // permission prompt. Stopping the stream's tracks here is what causes
+  // the browser to silently re-negotiate (and sometimes re-prompt for)
+  // mic access the next time SpeechRecognition starts.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        micStream = stream; // intentionally not stopped
+        startListening();
+      })
+      .catch(err => {
+        setStatus('Microphone access denied. Allow it in the address bar and reload.');
+        console.warn('JARVIS mic permission error:', err);
+      });
+  } else {
+    startListening();
+  }
+
+  // Safety net #1: after many start/stop cycles, an occasional r.start()
+  // call can throw and get silently swallowed, leaving recognition
+  // stopped with nothing left to restart it. Periodically check and
+  // nudge it back to life if that ever happens.
+  //
+  // Safety net #2: some browsers can leave a recognition session in a
+  // "zombie" state — onstart fired (recognitionActive = true) but the
+  // engine has effectively stopped delivering events, without ever
+  // firing onend to trigger our normal restart path. If too long has
+  // passed since ANY recognition event, force a hard restart.
+  const ZOMBIE_TIMEOUT_MS = 12000;
+
+  setInterval(() => {
+    if (permissionDenied) return;
+
+    if (!recognitionActive) {
+      startListening();
+      return;
+    }
+
+    const idleFor = Date.now() - lastRecognitionEventAt;
+    if (idleFor > ZOMBIE_TIMEOUT_MS) {
+      console.warn('JARVIS: recognition looked idle for', idleFor, 'ms — forcing restart.');
+      try { recognition.abort(); } catch (err) { /* ignore */ }
+      recognitionActive = false;
+      setTimeout(startListening, 300);
+    }
+  }, 4000);
+})();
+</script>
+
+<script id="savedSceneData" type="application/json">{"objects":[],"videos":[{"name":"video1","fileIndex":1,"src":"video1.mp4","position":[0,1.919378277993439,-4.590447419123385],"rotation":[0,0,0],"scale":5,"width":1.2,"height":0.675,"solid":false,"loop":true,"volume":1}],"triggers":[]}</script>
+</body>
+</html>
